@@ -1,0 +1,371 @@
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  User              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Exam {
+  id                  String                @id
+  userId              String
+  examTypeId          String
+  title               String
+  duration            Int
+  totalQuestions      Int
+  difficulty          Difficulty            @default(MIXED)
+  status              ExamStatus            @default(IN_PROGRESS)
+  startedAt           DateTime              @default(now())
+  submittedAt         DateTime?
+  configurationHash   String?               // Hash of the exam configuration used
+  generationMetadata  Json?                 // Metadata about how this exam was generated
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime
+  ExamType            ExamType              @relation(fields: [examTypeId], references: [id])
+  User                User                  @relation(fields: [userId], references: [id])
+  ExamQuestion        ExamQuestion[]
+  ExamResult          ExamResult?
+  UserQuestionHistory UserQuestionHistory[]
+}
+
+model ExamQuestion {
+  id                String   @id
+  examId            String
+  questionId        String
+  userAnswer        String?
+  isCorrect         Boolean?
+  timeSpent         Int?
+  isMarkedForReview Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime
+  Exam              Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  Question          Question @relation(fields: [questionId], references: [id])
+
+  @@unique([examId, questionId])
+}
+
+model ExamResult {
+  id             String   @id
+  examId         String   @unique
+  userId         String
+  totalQuestions Int
+  correctAnswers Int
+  wrongAnswers   Int
+  unanswered     Int
+  totalScore     Float
+  percentage     Float
+  timeSpent      Int
+  physicsScore   Float?
+  chemistryScore Float?
+  mathScore      Float?
+  biologyScore   Float?
+  easyCorrect    Int      @default(0)
+  mediumCorrect  Int      @default(0)
+  hardCorrect    Int      @default(0)
+  easyTotal      Int      @default(0)
+  mediumTotal    Int      @default(0)
+  hardTotal      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime
+  Exam           Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  User           User     @relation(fields: [userId], references: [id])
+}
+
+model ExamType {
+  id                String              @id
+  name              String              @unique
+  code              String              @unique
+  createdAt         DateTime            @default(now())
+  Exam              Exam[]
+  Question          Question[]
+  ExamConfiguration ExamConfiguration[]
+}
+
+model Question {
+  id                  String                @id
+  questionText        String
+  optionA             String
+  optionB             String
+  optionC             String
+  optionD             String
+  correctAnswer       String
+  explanation         String?
+  questionType        QuestionType          @default(TEXT)  // New field: distinguish between TEXT and IMAGE questions
+  imageUrl            String?               // Keep for backward compatibility during migration
+  imageData           String?               // Base64 encoded image data
+  imageMimeType       String?               // MIME type (e.g., 'image/jpeg', 'image/png')
+  imageFileName       String?               // Original filename for downloads
+  imageAltText        String?               // New field: accessibility alt text for images
+  difficulty          Difficulty            @default(MEDIUM)
+  subjectId           String
+  examTypeId          String
+  sourceExam          String?               // Primary exam type this question was designed for
+  compatibleExams     String[]              // Array of exam types this question can be used in
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime
+  ExamQuestion        ExamQuestion[]
+  ExamType            ExamType              @relation(fields: [examTypeId], references: [id])
+  Subject             Subject               @relation(fields: [subjectId], references: [id])
+  UserQuestionHistory UserQuestionHistory[]
+  QuestionUsageStats  QuestionUsageStats?
+}
+
+model Session {
+  id           String   @id
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  User         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Subject {
+  id        String     @id
+  name      String     @unique
+  code      String     @unique
+  createdAt DateTime   @default(now())
+  Question  Question[]
+}
+
+model User {
+  id                  String              @id
+  name                String?
+  email               String              @unique
+  emailVerified       DateTime?
+  image               String?
+  password            String?
+  role                UserRole            @default(STUDENT)
+  // Payment and subscription fields
+  stream              UserStream?         // MPC or BIPC
+  subscriptionStatus  SubscriptionStatus  @default(FREE)
+  subscriptionEndDate DateTime?
+  paymentId           String?
+  subscriptionPlanId  String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime
+  Account             Account[]
+  Exam                Exam[]
+  ExamResult          ExamResult[]
+  Session             Session[]
+  UserDevice          UserDevice[]
+  UserSession         UserSession[]
+  UserQuestionHistory UserQuestionHistory[]
+  ExamConfiguration   ExamConfiguration[]
+  Payment             Payment[]
+  SubscriptionPlan    SubscriptionPlan?   @relation(fields: [subscriptionPlanId], references: [id])
+}
+
+model UserDevice {
+  id           String   @id
+  userId       String
+  deviceId     String
+  userAgent    String
+  ipAddress    String
+  deviceName   String?
+  lastActiveAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  isActive     Boolean  @default(true)
+  User         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+}
+
+model UserSession {
+  id           String   @id
+  userId       String
+  sessionToken String   @unique
+  deviceId     String
+  rememberMe   Boolean  @default(false)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+  User         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionToken])
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Dynamic Exam Generation System Tables
+
+model UserQuestionHistory {
+  id                     String   @id @default(cuid())
+  userId                 String
+  questionId             String
+  examId                 String
+  examAttemptNumber      Int      // Track which attempt this was for the user
+  timestamp              DateTime @default(now())
+  examConfigurationHash  String   // Hash of exam configuration for quick matching
+  questionPositionInExam Int      // Position of question in the exam (1-based)
+  userAnswer             String?  // User's answer to this question
+  isCorrect              Boolean? // Whether the answer was correct
+  timeSpent              Int?     // Time spent on this question in seconds
+  recyclingEligibleAt    DateTime? // When this question becomes eligible for recycling
+  
+  User     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  Exam     Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, questionId, examId])
+  @@index([userId, examConfigurationHash])
+  @@index([userId, timestamp])
+  @@index([questionId, timestamp])
+  @@index([recyclingEligibleAt])
+}
+
+model ExamConfiguration {
+  id                    String   @id @default(cuid())
+  userId                String
+  configurationHash     String   @unique // Hash of the configuration for quick matching
+  examTypeId            String
+  subjectIds            String[] // Array of subject IDs
+  difficulty            Difficulty
+  totalQuestions        Int
+  duration              Int
+  configurationName     String?  // User-friendly name for the configuration
+  usageCount            Int      @default(0) // How many times this configuration has been used
+  lastUsedAt            DateTime @default(now())
+  createdAt             DateTime @default(now())
+  
+  User     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ExamType ExamType @relation(fields: [examTypeId], references: [id])
+  
+  @@index([userId, lastUsedAt])
+  @@index([configurationHash])
+  @@index([userId, usageCount])
+}
+
+model QuestionUsageStats {
+  id                    String   @id @default(cuid())
+  questionId            String   @unique
+  totalUsageCount       Int      @default(0) // Total times this question has been used
+  lastUsedAt            DateTime?
+  averageTimeSpent      Float?   // Average time users spend on this question
+  correctAnswerRate     Float?   // Percentage of users who answered correctly
+  difficultyAccuracy    Float?   // How accurate the difficulty rating is based on performance
+  recyclingInterval     Int      @default(3) // How many exams to wait before recycling (dynamic)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  Question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+  @@index([lastUsedAt])
+  @@index([totalUsageCount])
+}
+
+// Payment and Subscription Models
+
+model Payment {
+  id                String        @id @default(cuid())
+  userId            String
+  razorpayOrderId   String        @unique
+  razorpayPaymentId String?       @unique
+  amount            Float         // Amount in rupees
+  currency          String        @default("INR")
+  status            PaymentStatus @default(PENDING)
+  paymentMethod     String?       // card, netbanking, wallet, upi, etc.
+  subscriptionPlanId String
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  completedAt       DateTime?
+  failedAt          DateTime?
+  notes             Json?         // Additional metadata
+  
+  User             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  SubscriptionPlan SubscriptionPlan @relation(fields: [subscriptionPlanId], references: [id])
+  
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([razorpayOrderId])
+}
+
+model SubscriptionPlan {
+  id                String    @id @default(cuid())
+  name              String    @unique
+  description       String?
+  mrpPrice          Float     // Maximum Retail Price in rupees
+  currentPrice      Float     // Current discounted price in rupees
+  discountPercentage Float    // Discount percentage
+  validityDays      Int       // Number of days the subscription is valid
+  features          String[]  // Array of features included
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  User    User[]
+  Payment Payment[]
+  
+  @@index([isActive])
+  @@index([currentPrice])
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+  MIXED
+}
+
+enum ExamStatus {
+  IN_PROGRESS
+  COMPLETED
+  SUBMITTED
+}
+
+enum UserRole {
+  STUDENT
+  ADMIN
+}
+
+enum QuestionType {
+  TEXT
+  IMAGE
+}
+
+enum UserStream {
+  MPC    // Mathematics, Physics, Chemistry
+  BIPC   // Biology, Physics, Chemistry
+}
+
+enum SubscriptionStatus {
+  FREE
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
